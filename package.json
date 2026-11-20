@@ -1,0 +1,14 @@
+{
+  "name": "cf-local-sub",
+  "version": "1.0.0",
+  "description": "Local and Docker-ready CloudflareSpeedTest scheduler and node subscription builder",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

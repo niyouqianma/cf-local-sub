@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CF-Local-Sub · 本地 / Docker 优选 IP 订阅控制台</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-group">
+        <div class="brand-logo" aria-hidden="true">CF</div>
+        <div>
+          <div class="brand-title">
+            <span>CF-Local-Sub</span>
+            <span class="pill pill-emerald">v2.0 融合版</span>
+            <span id="badge-runtime" class="pill pill-muted">检测中...</span>
+            <span id="badge-cfst" class="pill pill-muted">CFST 检测中...</span>
+          </div>
+          <p class="brand-sub">Worker 多源实时聚合 + CloudflareSpeedTest 本地定时优选 + 一键生成多客户端订阅</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span id="badge-next-run" class="pill pill-cyan">定时未开启</span>
+        <a href="#part-4" class="btn btn-primary btn-sm">⚡ 跳至生成订阅</a>
+      </div>
+    </header>
+
+    <section id="status-banner" class="status-banner status-idle">
+      <div class="status-dot"></div>
+      <div class="status-copy">
+        <strong id="status-text">正在连接本地控制台...</strong>
+        <span id="status-meta" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="kpi-grid">
+      <article class="kpi-card">
+        <span class="kpi-label">生效优选端点</span>
+        <strong id="kpi-endpoint-count" class="kpi-value">0</strong>
+        <span id="kpi-endpoint-sub" class="kpi-hint">本地 0 · 动态 0 · 域名 0</span>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-label">本地 CFST 实测</span>
+        <strong id="kpi-cfst-speed" class="kpi-value">--</strong>
+        <span id="kpi-cfst-delay" class="kpi-hint">CSV 共 0 行</span>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-label">在线数据源池</span>
+        <strong id="kpi-online-health" class="kpi-value">--</strong>
+        <span id="kpi-online-cache" class="kpi-hint">等待同步</span>
+      </article>
+      <article class="kpi-card">
+        <span class="kpi-label">已组装节点数</span>
+        <strong id="kpi-node-count" class="kpi-value">0</strong>
+        <span id="kpi-node-sub" class="kpi-hint">基础节点 0 个</span>
+      </article>
+    </section>
+
+    <nav class="step-nav" aria-label="五步工作流导航">
+      <a class="step-pill active" href="#part-1" data-section="part-1"><span class="step-num">1</span>粘贴节点</a>
+      <a class="step-pill" href="#part-2" data-section="part-2"><span class="step-num">2</span>Worker 在线策略</a>
+      <a class="step-pill" href="#part-3" data-section="part-3"><span class="step-num">3</span>本地 CFST 优选</a>
+      <a class="step-pill" href="#part-4" data-section="part-4"><span class="step-num">4</span>立即生成订阅</a>
+      <a class="step-pill" href="#part-5" data-section="part-5"><span class="step-num">5</span>参数与设置</a>
+    </nav>
+
+    <main class="sections-stack">
+      <!-- 第 1 部分：粘贴自建节点链接 -->
+      <section id="part-1" class="section-card">
+        <div class="section-head">
+          <div class="section-title-group">
+            <span class="part-badge">01</span>
+            <div>
+              <h2>粘贴自建节点链接</h2>
+              <p>导入走 Cloudflare CDN 的原始节点（支持多行 vmess://、vless://、trojan:// 或 Base64 订阅文本）</p>
+            </div>
+          </div>
+          <div class="btn-row">
+            <span id="base-node-badge" class="pill pill-muted">0 个基础节点</span>
+            <button id="btn-fill-demo" class="btn btn-secondary btn-sm" type="button">填入演示节点</button>
+            <button id="btn-clear-links" class="btn btn-ghost btn-sm" type="button">清空</button>
+          </div>
+        </div>
+
+        <textarea
+          id="input-base-links"
+          class="code-input"
+          rows="5"
+          placeholder="粘贴一个或多个 vmess:// / vless:// / trojan:// 节点链接（每行一条），或直接粘贴 Base64 编码的订阅内容..."
+        ></textarea>
+        <div id="base-client-warnings" class="alert-box hidden"></div>
+      </section>
+
+      <!-- 第 2 部分：Worker 自动优选策略 -->
+      <section id="part-2" class="section-card">
+        <div class="section-head">
+          <div class="section-title-group">
+            <span class="part-badge">02</span>
+            <div>
+              <h2>Worker 自动优选策略</h2>
+              <p>保留原 Worker 三路在线开关与数量控制（默认关闭，以本地 CFST 为最高优先级；按需开启后按 TTL 缓存自动刷新）</p>
+            </div>
+          </div>
+          <div class="btn-row">
+            <span id="badge-online-cache" class="pill pill-muted">等待状态...</span>
+            <button id="btn-refresh-online" class="btn btn-secondary btn-sm" type="button">🔄 刷新在线源</button>
+          </div>
+        </div>
+
+        <div class="two-col-pool">
+          <div class="strategy-stack">
+            <div class="strategy-item">
+              <label class="switch-label">
+                <input id="chk-enable-dynamic" type="checkbox" />
+                <div>
+                  <div class="strategy-title">⚡ 实时动态测速 IP（4 路并发）</div>
+                  <div class="strategy-sub">WeTest（电信/联通/移动/三网）· HostMonit · Xingpingcn · IPDB</div>
+                </div>
+              </label>
+              <select id="select-max-dynamic" class="select-compact" aria-label="实时动态测速 IP 最大数量">
+                <option value="20">最多 20 个</option>
+                <option value="40">最多 40 个</option>
+                <option value="60">最多 60 个</option>
+                <option value="100">最多 100 个</option>
+                <option value="200">最多 200 个</option>
+              </select>
+            </div>
+
+            <div class="strategy-item">
+              <label class="switch-label">
+                <input id="chk-enable-builtin" type="checkbox" />
+                <div>
+                  <div class="strategy-title">🌐 18 个内置优选域名</div>
+                  <div class="strategy-sub">实测直通 Cloudflare 边缘（182682 / bestcf / Seeck 三网等）</div>
+                </div>
+              </label>
+              <span class="pill pill-muted">固定 18 个</span>
+            </div>
+
+            <div class="strategy-item">
+              <label class="switch-label">
+                <input id="chk-enable-github" type="checkbox" />
+                <div>
+                  <div class="strategy-title">🐙 GitHub 高星优选源（3 路）</div>
+                  <div class="strategy-sub">LancelotRar Top100 · gslege Cdtools · IPDB BestCF</div>
+                </div>
+              </label>
+              <select id="select-max-github" class="select-compact" aria-label="GitHub 优选源最大数量">
+                <option value="20">最多 20 个</option>
+                <option value="40">最多 40 个</option>
+                <option value="80">最多 80 个</option>
+                <option value="120">最多 120 个</option>
+                <option value="200">最多 200 个</option>
+              </select>
+            </div>
+
+            <div class="health-panel">
+              <div class="sub-label">在线数据源健康度监控</div>
+              <div id="source-health-bar" class="source-health-bar">
+                <span class="pill pill-muted">等待检测在线源...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="monitor-box">
+            <div class="toolbar-row">
+              <div id="online-filter-tabs" class="filter-pills">
+                <button class="filter-btn active" data-filter="all" type="button">全部 <span id="cnt-all">0</span></button>
+                <button class="filter-btn" data-filter="dynamic" type="button">实时动态 <span id="cnt-dynamic">0</span></button>
+                <button class="filter-btn" data-filter="domain" type="button">内置域名 <span id="cnt-domain">0</span></button>
+                <button class="filter-btn" data-filter="github" type="button">GitHub 源 <span id="cnt-github">0</span></button>
+              </div>
+              <input id="input-online-search" class="search-input" type="text" placeholder="搜索 IP / 域名 / 线路..." />
+            </div>
+            <div class="table-scroll online-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>IP / 域名</th>
+                    <th>来源分类</th>
+                    <th>延迟 / 节点</th>
+                    <th>带宽 / 备注</th>
+                    <th class="col-op">固定</th>
+                  </tr>
+                </thead>
+                <tbody id="online-pool-body">
+                  <tr><td colspan="5" class="muted">等待读取策略配置...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 第 3 部分：CloudflareSpeedTest 本地定时优选 -->
+      <section id="part-3" class="section-card">
+        <div class="section-head">
+          <div class="section-title-group">
+            <span class="part-badge">03</span>
+            <div>
+              <h2>CloudflareSpeedTest 本地定时优选</h2>
+              <p>使用本机或容器内 cfst 实测当前宽带直连质量，过滤丢包/超时后与在线策略自动合并</p>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button id="btn-import-local" class="btn btn-secondary btn-sm hidden" type="button">📥 导入本地 result.csv</button>
+            <label class="btn btn-secondary btn-sm file-btn">
+              📂 上传 CSV
+              <input id="file-csv-upload" type="file" accept=".csv,.txt" hidden />
+            </label>
+            <button id="btn-run-now" class="btn btn-primary btn-sm" type="button">⚡ 立即测速</button>
+            <button id="btn-stop-now" class="btn btn-danger btn-sm hidden" type="button">⏹ 停止测速</button>
+          </div>
+        </div>
+
+        <div class="cfst-quickbar">
+          <label class="check-item">
+            <input id="chk-enable-local-cfst" type="checkbox" />
+            <strong>启用本地 CFST 实测优选池</strong>
+          </label>
+          <div class="inline-field">
+            <label for="input-top-n">保留本地优选 IP 数量 (Top N)</label>
+            <input id="input-top-n" type="number" min="1" max="200" />
+          </div>
+          <span id="cfst-pool-summary" class="muted">等待读取本地 result.csv</span>
+        </div>
+
+        <div class="two-col">
+          <div class="subcard">
+            <div class="subcard-head">
+              <h3>本地实测优选池 (Top N)</h3>
+              <span class="muted">按速度降序 · 延迟升序过滤</span>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>IP 地址</th>
+                    <th>地区码</th>
+                    <th>平均延迟</th>
+                    <th>丢包率</th>
+                    <th>下载速度</th>
+                    <th class="col-op">固定</th>
+                  </tr>
+                </thead>
+                <tbody id="ip-pool-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="subcard">
+            <div class="subcard-head">
+              <div class="mini-tabs" id="cfst-side-tabs">
+                <button class="mini-tab active" data-side-tab="logs" type="button">实时测速日志</button>
+                <button class="mini-tab" data-side-tab="history" type="button">历史测速记录</button>
+              </div>
+              <button id="btn-clear-logs" class="btn btn-ghost btn-sm" type="button">清屏</button>
+            </div>
+            <div id="side-panel-logs" class="side-panel active">
+              <div id="console-logs" class="console-box"></div>
+            </div>
+            <div id="side-panel-history" class="side-panel">
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>完成时间</th>
+                      <th>触发</th>
+                      <th>耗时</th>
+                      <th>状态</th>
+                      <th>结果摘要</th>
+                    </tr>
+                  </thead>
+                  <tbody id="history-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 第 4 部分：立即生成订阅 -->
+      <section id="part-4" class="section-card section-highlight">
+        <div class="section-head">
+          <div class="section-title-group">
+            <span class="part-badge part-badge-emerald">04</span>
+            <div>
+              <h2>立即生成订阅</h2>
+              <p>将第 1 部分的自建节点与第 2/3 部分选中的优选策略合并组装，刷新服务端实时订阅与本地静态文件</p>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button id="btn-generate-force" class="btn btn-secondary" type="button">🔄 强制刷新在线源并生成</button>
+            <button id="btn-generate-sub" class="btn btn-primary btn-cta" type="button">⚡ 立即生成订阅</button>
+          </div>
+        </div>
+
+        <div id="estimate-bar" class="estimate-bar">
+          <span id="estimate-text">正在计算预计生成节点规模...</span>
+        </div>
+
+        <div id="warnings-box" class="alert-box hidden"></div>
+
+        <div id="breakdown-bar" class="breakdown-bar"></div>
+
+        <div class="sub-cards-grid" id="sub-links-list"></div>
+
+        <div class="static-files-box">
+          <div class="static-title">本地落盘文件（生成或定时测速后自动同步更新）</div>
+          <div id="static-files-list" class="static-paths"></div>
+        </div>
+
+        <div class="preview-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>生成节点名</th>
+                <th>协议 / 传输</th>
+                <th>优选地址</th>
+                <th>端口</th>
+                <th>Host / SNI</th>
+                <th>来源与实测指标</th>
+              </tr>
+            </thead>
+            <tbody id="nodes-preview-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 第 5 部分：设置 -->
+      <section id="part-5" class="section-card">
+        <div class="section-head">
+          <div class="section-title-group">
+            <span class="part-badge">05</span>
+            <div>
+              <h2>设置</h2>
+              <p>统一管理 Worker 组装与缓存参数、CloudflareSpeedTest 测速与定时策略、自定义 IP 及容器部署指南</p>
+            </div>
+          </div>
+          <button id="btn-save-all" class="btn btn-primary" type="button">💾 保存全部设置</button>
+        </div>
+
+        <div class="two-col-equal">
+          <div class="subcard">
+            <div class="section-sub first">A · Worker 组装规则与在线缓存</div>
+            <div class="form-grid-2">
+              <div class="field">
+                <label for="input-name-prefix">节点备注前缀</label>
+                <input id="input-name-prefix" type="text" placeholder="CF" />
+              </div>
+              <div class="field">
+                <label for="select-endpoint-priority">端点合并优先级</label>
+                <select id="select-endpoint-priority">
+                  <option value="local-custom-online">本地 CFST > 自定义固定 > 在线源</option>
+                  <option value="custom-local-online">自定义固定 > 本地 CFST > 在线源</option>
+                  <option value="online-local-custom">在线源 > 本地 CFST > 自定义固定</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="field">
+                <label for="input-cache-ttl">在线源缓存 TTL（秒，0=每次实时）</label>
+                <input id="input-cache-ttl" type="number" min="0" max="86400" />
+              </div>
+              <div class="field">
+                <label for="input-source-timeout">在线源单路超时（毫秒）</label>
+                <input id="input-source-timeout" type="number" min="1000" max="20000" step="500" />
+              </div>
+            </div>
+
+            <div class="checkbox-row">
+              <label class="check-item"><input id="chk-metrics-name" type="checkbox" /> 节点名附带速度与延迟</label>
+              <label class="check-item"><input id="chk-keep-original-host" type="checkbox" /> 强制保留原节点 Host / SNI</label>
+              <label class="check-item"><input id="chk-allow-ipv6" type="checkbox" /> 允许 IPv6 地址</label>
+              <label class="check-item"><input id="chk-fallback-domain" type="checkbox" /> 无可用结果时回退 18 个内置域名</label>
+              <label class="check-item"><input id="chk-disk-fallback" type="checkbox" /> 在线源失败时启用磁盘缓存兜底</label>
+            </div>
+
+            <div class="label-row">
+              <label class="field-label" for="input-custom-ips">自定义固定 IP / 域名（支持 IP:端口#备注，可从第 2/3 部分点击 + 追加）</label>
+              <div class="btn-row">
+                <span id="custom-ip-badge" class="pill pill-muted">0 个地址</span>
+                <button id="btn-clear-custom-ips" class="btn btn-ghost btn-sm" type="button">清空</button>
+              </div>
+            </div>
+            <textarea
+              id="input-custom-ips"
+              class="code-input"
+              rows="6"
+              placeholder="104.16.123.10#自选电信&#10;172.64.155.20:8443#备用TLS端口"
+            ></textarea>
+
+            <div class="section-sub">C · Docker 部署与 Mihomo 接入参考</div>
+            <div class="guide-box">
+              <div class="subcard-head">
+                <span class="sub-label">Mihomo Proxy-Provider 示例</span>
+                <button id="btn-copy-mihomo" class="btn btn-ghost btn-sm" type="button">复制片段</button>
+              </div>
+              <pre id="snippet-mihomo" class="code-block"></pre>
+
+              <div class="sub-label">本机 Windows 测速防劫持直连规则（TUN 模式必加）</div>
+              <pre class="code-block">rules:
+  - PROCESS-NAME,cfst.exe,DIRECT
+  - PROCESS-NAME,CloudflareST.exe,DIRECT</pre>
+
+              <div class="sub-label">Docker 一键启动与主要环境变量</div>
+              <pre class="code-block">docker compose up -d --build</pre>
+              <ul class="guide-list">
+                <li><code>PORT=8787</code> / <code>DATA_DIR=/data</code>：控制台端口与持久化目录。</li>
+                <li><code>SOURCE_CACHE_TTL_SEC=300</code> / <code>SOURCE_TIMEOUT_MS=4500</code>：在线源缓存与单路超时。</li>
+                <li><code>SCHEDULE_INTERVAL_MINUTES=360</code>：本地 CFST 默认每 6 小时自动测速一次。</li>
+                <li><code>SUB_ACCESS_TOKEN</code> / <code>ADMIN_TOKEN</code>：公网暴露建议设置的订阅与管理口令。</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="subcard">
+            <div class="section-sub first">B · 定时调度与 CloudflareSpeedTest 参数</div>
+            <div class="form-grid-2">
+              <div class="field">
+                <label for="input-schedule-preset">快捷周期</label>
+                <select id="input-schedule-preset">
+                  <option value="0">关闭自动定时（仅手动）</option>
+                  <option value="60">每 1 小时 (60 分钟)</option>
+                  <option value="180">每 3 小时 (180 分钟)</option>
+                  <option value="360">每 6 小时 (360 分钟)</option>
+                  <option value="720">每 12 小时 (720 分钟)</option>
+                  <option value="1440">每 24 小时 (1440 分钟)</option>
+                  <option value="custom">自定义分钟数</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="input-schedule-minutes">间隔分钟数 (0=关闭)</label>
+                <input id="input-schedule-minutes" type="number" min="0" max="10080" />
+              </div>
+            </div>
+            <div class="checkbox-row">
+              <label class="check-item"><input id="chk-schedule-enabled" type="checkbox" /> 启用定时优选</label>
+              <label class="check-item"><input id="chk-run-startup" type="checkbox" /> 容器/程序启动后自动执行一次</label>
+            </div>
+
+            <div class="field">
+              <label for="input-cfst-bin">CFST 可执行文件路径（留空则自动探测 bin/ 或本地下载目录）</label>
+              <input id="input-cfst-bin" type="text" placeholder="留空自动探测，例如 E:\Download\cfst_windows_amd64\cfst.exe 或 /app/bin/cfst" />
+            </div>
+            <div class="form-grid-3">
+              <div class="field">
+                <label for="input-cfst-mode">延迟测速模式</label>
+                <select id="input-cfst-mode">
+                  <option value="tcping">TCPing（默认）</option>
+                  <option value="httping">HTTPing（支持地区过滤）</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="input-cfst-colo">匹配地区码 (-cfcolo)</label>
+                <input id="input-cfst-colo" type="text" placeholder="如 HKG,SJC,NRT" />
+              </div>
+              <div class="field">
+                <label for="input-cfst-port">测速端口 (-tp)</label>
+                <input id="input-cfst-port" type="number" min="1" max="65535" />
+              </div>
+            </div>
+
+            <div class="form-grid-3">
+              <div class="field">
+                <label for="input-cfst-routines">并发线程 (-n)</label>
+                <input id="input-cfst-routines" type="number" min="1" max="1000" />
+              </div>
+              <div class="field">
+                <label for="input-cfst-pingtimes">Ping 次数 (-t)</label>
+                <input id="input-cfst-pingtimes" type="number" min="1" max="20" />
+              </div>
+              <div class="field">
+                <label for="input-cfst-dn">下载测速数 (-dn)</label>
+                <input id="input-cfst-dn" type="number" min="1" max="100" />
+              </div>
+            </div>
+
+            <div class="form-grid-3">
+              <div class="field">
+                <label for="input-cfst-dt">单IP测速秒数 (-dt)</label>
+                <input id="input-cfst-dt" type="number" min="2" max="60" />
+              </div>
+              <div class="field">
+                <label for="input-cfst-tl">平均延迟上限 (-tl ms)</label>
+                <input id="input-cfst-tl" type="number" min="10" max="9999" />
+              </div>
+              <div class="field">
+                <label for="input-cfst-tlr">丢包率上限 (-tlr)</label>
+                <input id="input-cfst-tlr" type="number" step="0.05" min="0" max="1" />
+              </div>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="field">
+                <label for="input-cfst-sl">下载速度下限 (-sl MB/s)</label>
+                <input id="input-cfst-sl" type="number" step="0.5" min="0" max="1000" />
+              </div>
+              <div class="field">
+                <label for="input-cfst-url">测速地址 (-url)</label>
+                <input id="input-cfst-url" type="text" placeholder="https://cf.xiu2.xyz/url" />
+              </div>
+            </div>
+
+            <div class="checkbox-row">
+              <label class="check-item"><input id="chk-cfst-dd" type="checkbox" /> 禁用下载测速 (-dd，仅按延迟)</label>
+              <label class="check-item"><input id="chk-cfst-allip" type="checkbox" /> 测速全部 IP (-allip，耗时较久)</label>
+            </div>
+
+            <div class="label-row">
+              <label class="field-label" for="input-ip-txt">待测速 IP 段 (ip.txt)</label>
+              <button id="btn-reset-ip-txt" class="btn btn-ghost btn-sm" type="button">恢复默认 CF 段</button>
+            </div>
+            <textarea id="input-ip-txt" class="code-input ip-txt-area" rows="10"></textarea>
+            <div class="card-footer">
+              <button id="btn-save-settings-bottom" class="btn btn-primary" type="button">💾 保存全部设置</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Preview Modal -->
+  <div id="preview-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="modal-title">订阅源码预览</h3>
+        <div class="btn-row">
+          <button id="btn-modal-copy" class="btn btn-primary btn-sm" type="button">复制内容</button>
+          <button id="btn-modal-close" class="btn btn-ghost btn-sm" type="button">关闭</button>
+        </div>
+      </div>
+      <pre id="modal-content" class="modal-pre"></pre>
+    </div>
+  </div>
+
+  <!-- Admin Token Modal -->
+  <div id="auth-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-sm">
+      <div class="modal-head">
+        <h3>需要管理口令</h3>
+      </div>
+      <p class="muted-para">当前服务开启了 <code>ADMIN_TOKEN</code> 保护，请输入管理口令继续：</p>
+      <input id="input-admin-token" type="password" placeholder="输入 ADMIN_TOKEN" />
+      <div class="card-footer">
+        <button id="btn-auth-submit" class="btn btn-primary" type="button">验证登录</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

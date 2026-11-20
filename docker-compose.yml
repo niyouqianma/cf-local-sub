@@ -1,0 +1,23 @@
+services:
+  cf-local-sub:
+    build:
+      context: .
+      args:
+        CFST_VERSION: v2.3.5
+    container_name: cf-local-sub
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/data
+    environment:
+      TZ: Asia/Shanghai
+      PORT: "8787"
+      DATA_DIR: /data
+      SCHEDULE_INTERVAL_MINUTES: "360"
+      SOURCE_CACHE_TTL_SEC: "300"
+      SOURCE_TIMEOUT_MS: "4500"
+      # 建议公网或反代暴露时取消下方注释并设置口令
+      # SUB_ACCESS_TOKEN: change-me-sub-token
+      # ADMIN_TOKEN: change-me-admin-token
+      # CFST_URL: https://cf.xiu2.xyz/url
